@@ -1,0 +1,43 @@
+name: Eta CI Build
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: eta-ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    name: 构建 Debug 与 Release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-build
+      - name: 生成临时签名 keystore
+        run: |
+          keytool -genkeypair -noprompt \
+            -keystore "$RUNNER_TEMP/eta-ci.jks" -storetype JKS \
+            -alias eta-ci -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass etacibuild -keypass etacibuild \
+            -dname "CN=Eta CI, OU=Build, O=lifengqaq, L=NA, ST=NA, C=CN"
+      - name: 构建 APK
+        env:
+          ETA_RELEASE_STORE_FILE: ${{ runner.temp }}/eta-ci.jks
+          ETA_RELEASE_STORE_PASSWORD: etacibuild
+          ETA_RELEASE_KEY_ALIAS: eta-ci
+          ETA_RELEASE_KEY_PASSWORD: etacibuild
+        run: |
+          ./gradlew --no-daemon --no-configuration-cache \
+            -Peta.buildMetadata=${GITHUB_SHA::7} \
+            :app:assembleDebug :app:assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eta-apks
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 7
