@@ -16,19 +16,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-build
-      - name: 生成临时签名 keystore
+      - name: 还原发布证书
+        env:
+          ETA_RELEASE_KEYSTORE_BASE64: ${{ secrets.ETA_RELEASE_KEYSTORE_BASE64 }}
         run: |
-          keytool -genkeypair -noprompt \
-            -keystore "$RUNNER_TEMP/eta-ci.jks" -storetype JKS \
-            -alias eta-ci -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass etacibuild -keypass etacibuild \
-            -dname "CN=Eta CI, OU=Build, O=lifengqaq, L=NA, ST=NA, C=CN"
+          if [[ -z "$ETA_RELEASE_KEYSTORE_BASE64" ]]; then
+            echo "::error::缺少 ETA_RELEASE_KEYSTORE_BASE64"
+            exit 1
+          fi
+          printf '%s' "$ETA_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/eta-release.jks"
       - name: 构建 APK
         env:
-          ETA_RELEASE_STORE_FILE: ${{ runner.temp }}/eta-ci.jks
-          ETA_RELEASE_STORE_PASSWORD: etacibuild
-          ETA_RELEASE_KEY_ALIAS: eta-ci
-          ETA_RELEASE_KEY_PASSWORD: etacibuild
+          ETA_RELEASE_STORE_FILE: ${{ runner.temp }}/eta-release.jks
+          ETA_RELEASE_STORE_PASSWORD: ${{ secrets.ETA_RELEASE_STORE_PASSWORD }}
+          ETA_RELEASE_KEY_ALIAS: ${{ secrets.ETA_RELEASE_KEY_ALIAS }}
+          ETA_RELEASE_KEY_PASSWORD: ${{ secrets.ETA_RELEASE_KEY_PASSWORD }}
         run: |
           ./gradlew --no-daemon --no-configuration-cache \
             -Peta.buildMetadata=${GITHUB_SHA::7} \
